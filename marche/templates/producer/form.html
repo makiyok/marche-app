@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% from "_form_errors.html" import field %}
+{% block title %}{{ "商品の編集" if product else "商品の登録" }} | はちまん産直マルシェ{% endblock %}
+{% block content %}
+<h1>{{ "商品の編集" if product else "商品の登録" }}</h1>
+<form method="post" novalidate>
+  {{ form.hidden_tag() }}
+  {{ field(form.name) }}
+  {{ field(form.price) }}
+  {{ field(form.stock) }}
+  {{ field(form.description) }}
+  <label>{{ form.is_published() }} {{ form.is_published.label.text }}</label>
+  <p><small>公開しない場合は、購入者には見えません。収穫できたら公開してください。</small></p>
+  <button type="submit">{{ "更新する" if product else "登録する" }}</button>
+  <a href="{{ url_for('producer.index') }}" role="button" class="secondary outline">一覧へ戻る</a>
+</form>
+{% endblock %}
