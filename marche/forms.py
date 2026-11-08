@@ -1,4 +1,5 @@
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileAllowed, FileField, FileSize
 from wtforms import (
     BooleanField,
     EmailField,
@@ -62,4 +63,15 @@ class ProductForm(FlaskForm):
         ],
     )
     description = TextAreaField("紹介文", validators=[Optional(), Length(max=2000)])
+    # 拡張子とサイズはここで確かめる。中身（先頭のバイト）は uploads.detect_media_type で確かめる
+    image = FileField(
+        "写真（JPEG / PNG / WebP、5MB まで）",
+        validators=[
+            FileAllowed(
+                ["jpg", "jpeg", "png", "webp"],
+                message="JPEG・PNG・WebP の画像を選んでください",
+            ),
+            FileSize(max_size=5 * 1024 * 1024, message="写真は 5MB 以下にしてください"),
+        ],
+    )
     is_published = BooleanField("公開する")
