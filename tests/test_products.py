@@ -276,3 +276,29 @@ def test_削除はGETではできない(client, login, producer):
 def test_管理者も生産者の画面には入れない(client, login, admin):
     login(admin)
     assert client.get("/producer/products").status_code == 403
+
+
+# --- 注文がある商品は削除できない ---
+
+
+def test_注文がある商品は削除できない(client, login, producer, customer):
+    from helpers import make_order
+
+    product = make_product(producer)
+    make_order(customer, [(product, 1)])
+    login(producer)
+    response = client.post(f"/producer/products/{product.id}/delete")
+    assert response.status_code == 302
+    assert db.session.get(Product, product.id) is not None
+    assert "注文がある商品は削除できません" in client.get("/producer/products").text
+
+
+def test_注文がある商品は非公開にはできる(client, login, producer, customer):
+    from helpers import make_order
+
+    product = make_product(producer, is_published=True)
+    make_order(customer, [(product, 1)])
+    login(producer)
+    client.post(f"/producer/products/{product.id}/toggle")
+    db.session.refresh(product)
+    assert product.is_published is False

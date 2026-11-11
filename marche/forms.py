@@ -6,6 +6,7 @@ from wtforms import (
     IntegerField,
     PasswordField,
     RadioField,
+    SelectField,
     StringField,
     TextAreaField,
 )
@@ -75,3 +76,25 @@ class ProductForm(FlaskForm):
         ],
     )
     is_published = BooleanField("公開する")
+
+
+class AddToCartForm(FlaskForm):
+    # 選択肢（1〜min(10, いま買える数)）は、ビューで商品ごとに入れる。
+    # 範囲の確認もビューで行うので、ここでは選択肢の確認をしない
+    quantity = SelectField(
+        "数量",
+        coerce=int,
+        validate_choice=False,
+        validators=[InputRequired(message="数量を選んでください")],
+    )
+
+
+class CartUpdateForm(FlaskForm):
+    # 0 ならカートから外す
+    quantity = IntegerField(
+        "数量",
+        validators=[
+            InputRequired(message="数量を入力してください"),
+            NumberRange(min=0, max=10, message="0〜10で入力してください"),
+        ],
+    )

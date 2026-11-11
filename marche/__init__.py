@@ -17,6 +17,10 @@ def create_app(config=None):
         UPLOAD_FOLDER=os.path.join(app.root_path, "static", "uploads"),
         # 写真は 5MB まで。フォームの他の項目の分を見込んで、リクエスト全体は 6MB まで
         MAX_CONTENT_LENGTH=6 * 1024 * 1024,
+        STRIPE_SECRET_KEY=os.environ.get("STRIPE_SECRET_KEY", ""),
+        STRIPE_WEBHOOK_SECRET=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        # テストでは、本物の Stripe の代わりにフェイクを渡す（既定は None＝本物）
+        PAYMENT_SERVICE=None,
     )
     if config is not None:
         app.config.update(config)
@@ -33,9 +37,15 @@ def create_app(config=None):
     login_manager.login_view = "auth.login"
     login_manager.login_message = "ログインしてください"
 
-    from marche.views import auth, producer, shop
+    # 外部サービスは app.extensions に入れ、ビューはここから呼ぶ。
+    # 設定で渡されたフェイクがあればそれを、なければ本物のモジュールを使う
+    from marche.services import payment
 
-    for module in (auth, producer, shop):
+    app.extensions["payment"] = app.config["PAYMENT_SERVICE"] or payment
+
+    from marche.views import auth, cart, orders, producer, shop
+
+    for module in (auth, cart, orders, producer, shop):
         app.register_blueprint(module.bp)
 
     from marche import commands
@@ -45,6 +55,14 @@ def create_app(config=None):
     @app.template_filter("yen")
     def yen(value: int) -> str:
         return f"{value:,}円"
+
+    @app.template_filter("datetime_jp")
+    def datetime_jp(value):
+        """「11月14日(土) 10:00」の形式にする"""
+        weekdays = "月火水木金土日"
+        return (
+            f"{value.month}月{value.day}日({weekdays[value.weekday()]}) {value:%H:%M}"
+        )
 
     @app.errorhandler(403)
     def forbidden(error):
