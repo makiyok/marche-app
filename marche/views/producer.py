@@ -4,7 +4,7 @@ from flask_login import current_user
 from marche.decorators import role_required
 from marche.extensions import db
 from marche.forms import ProductForm
-from marche.models import Product, Role
+from marche.models import OrderItem, Product, Role
 from marche.uploads import delete_image, detect_media_type, save_image
 
 bp = Blueprint("producer", __name__, url_prefix="/producer")
@@ -127,8 +127,14 @@ def toggle(product_id):
 @bp.route("/products/<int:product_id>/delete", methods=["POST"])
 @role_required(Role.PRODUCER)
 def delete(product_id):
-    # 注文がある商品は削除できない、という確認は、注文の機能を作るときに足す
     product = get_own_product_or_403(product_id)
+    # 注文された商品を消すと、注文の記録と売上が壊れる。SQLite は外部キーの制約を
+    # 確かめないので、データベースだけに頼らず、ここでも確かめる
+    if db.session.scalar(
+        db.select(OrderItem.id).filter_by(product_id=product.id).limit(1)
+    ):
+        flash("注文がある商品は削除できません。非公開にしてください")
+        return redirect(url_for("producer.index"))
     filename = product.image_filename
     db.session.delete(product)
     db.session.commit()
