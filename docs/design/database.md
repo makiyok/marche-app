@@ -107,10 +107,15 @@ erDiagram
 ```text
 pending（支払い待ち） ──支払い確定（Webhook か完了ページ）──▶ paid（支払い済み）
         │
-        └──中断ページで取り消し（Session を期限切れにする）──▶ cancelled（取り消し）
+        ├──中断ページで取り消し（Session を期限切れにする）──▶ cancelled（取り消し）
+        │
+        └──Checkout Session を作れなかった──▶ cancelled（取り消し）
 ```
 
-- `pending` から `paid` への更新は、`pending` のときだけ更新する**条件付きの UPDATE 文**で行う（二重に確定して在庫を二重に減らさないため。[仕様書 4](../spec/04_flows_tests_seed.md)）
+- `pending` から `paid` への更新も、`pending` から `cancelled` への更新も、`WHERE status = 'pending'` を付けた**条件付きの UPDATE 文**（読む・確かめる・書くを1文）で行う
+  - 二重に確定して在庫を二重に減らさないため
+  - 取り消した注文に、あとから Webhook が来て `paid` になる、またはその逆が起きないため
+  - 更新できた行数が 1 のときだけ「自分が変えた」とみなし、0 なら何もしない（[仕様書 4](../spec/04_flows_tests_seed.md)）
 
 ### order_items
 
@@ -147,7 +152,9 @@ pending（支払い待ち） ──支払い確定（Webhook か完了ページ�
 **支払い完了時に減算する方式**（仕様書 3 の方式 B）を採用する。
 
 - `products.stock` は「生産者が入力した、いまある数」。収穫したら、いまの数に書き換えるだけでよい
-- 支払いが確定したとき（Webhook か完了ページ）に、明細ごとに `stock = stock - 数量` で減らす。足りなければ 0 で止め、ログに残す
+- 支払いが確定したとき（Webhook か完了ページ）に、明細ごとに `stock` を減らす。足りなければ 0 で止め、ログに残す
+  - `stock` には CHECK（0〜999）があるので、`stock - 数量` がマイナスになると制約に違反し、Webhook が 500 を返して Stripe が再送し続ける。マイナスにしない書き方にする
+  - 書き方は `case((stock >= 数量, stock - 数量), else_=0)`（SQLAlchemy の `case`）。MySQL でも SQLite でも動く。SQLite の `max(a, b)` も MySQL の `GREATEST` も、片方でしか動かないので使わない
 - 注文を作るとき（カート → 注文）は、減らさずに「いま買える数」で確かめるだけ。足りなければ注文を作らない
 
 | 方式 | 中身 | 採用しない / する理由 |
