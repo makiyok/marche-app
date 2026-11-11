@@ -14,6 +14,9 @@ def create_app(config=None):
             "DATABASE_URL", "sqlite:///marche.sqlite"
         ),
         SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE") == "1",
+        UPLOAD_FOLDER=os.path.join(app.root_path, "static", "uploads"),
+        # 写真は 5MB まで。フォームの他の項目の分を見込んで、リクエスト全体は 6MB まで
+        MAX_CONTENT_LENGTH=6 * 1024 * 1024,
     )
     if config is not None:
         app.config.update(config)
@@ -30,9 +33,9 @@ def create_app(config=None):
     login_manager.login_view = "auth.login"
     login_manager.login_message = "ログインしてください"
 
-    from marche.views import auth, shop
+    from marche.views import auth, producer, shop
 
-    for module in (auth, shop):
+    for module in (auth, producer, shop):
         app.register_blueprint(module.bp)
 
     from marche import commands
@@ -46,6 +49,10 @@ def create_app(config=None):
     @app.errorhandler(403)
     def forbidden(error):
         return render_template("errors/403.html"), 403
+
+    @app.errorhandler(413)
+    def too_large(error):
+        return render_template("errors/413.html"), 413
 
     @app.errorhandler(404)
     def not_found(error):
