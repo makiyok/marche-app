@@ -26,3 +26,19 @@ def reserved_quantity(product: Product) -> int:
 def available_stock(product: Product) -> int:
     """いま買える数 = 在庫 − 支払い待ち（35分以内）の数量の合計。0 未満にはしない"""
     return max(product.stock - reserved_quantity(product), 0)
+
+
+def cancel(order: Order) -> bool:
+    """支払い待ちの注文だけを取り消す。取り消せたら True、すでに支払い済み・取り消し済みなら False。
+
+    「読んで、pending なら書く」と2段階にすると、支払いの確定と同時に来たときに
+    確定済みの注文を取り消してしまう。確かめる条件を UPDATE 文の中に入れて、1回で行う。
+    取り消すと、押さえていた在庫は「いま買える数」に自然に戻る（pending ではなくなるため）。
+    """
+    result = db.session.execute(
+        db.update(Order)
+        .where(Order.id == order.id, Order.status == OrderStatus.PENDING)
+        .values(status=OrderStatus.CANCELLED)
+    )
+    db.session.commit()
+    return result.rowcount == 1

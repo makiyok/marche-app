@@ -3,7 +3,9 @@ from helpers import get_cart, make_order, make_product, set_cart
 
 from marche.extensions import db
 from marche.models import Order, OrderItem, OrderStatus
+from marche.services.inventory import available_stock
 from marche.services.orders import OrderError, create_order
+from marche.services.payment import PaymentError
 
 
 def place_order(client):
@@ -17,8 +19,8 @@ def orders():
 # --- 注文を作る（T9）---
 
 
-def test_注文すると支払い待ちの注文ができて注文詳細へ移る(
-    client, login, customer, producer
+def test_注文すると支払い待ちの注文ができてStripeの決済ページへ移る(
+    client, login, customer, producer, fake_payment
 ):
     product = make_product(producer, price=300)
     login(customer)
@@ -26,11 +28,49 @@ def test_注文すると支払い待ちの注文ができて注文詳細へ移�
     response = place_order(client)
     order = db.session.scalar(db.select(Order))
     assert response.status_code == 303
-    assert response.headers["Location"] == f"/orders/{order.id}"
+    assert response.headers["Location"] == (
+        f"https://checkout.stripe.test/pay/cs_test_fake_{order.id}"
+    )
     assert order.user_id == customer.id
     assert order.status == OrderStatus.PENDING
     assert order.total_amount == 600
+    assert order.stripe_checkout_session_id == f"cs_test_fake_{order.id}"
+    assert fake_payment.created == [order.id]
+
+
+def test_決済ページを作れなかったら注文を取り消してカートに戻す(
+    client, login, customer, producer, fake_payment
+):
+    product = make_product(producer, stock=5)
+    fake_payment.error = PaymentError("決済ページを作れませんでした")
+    login(customer)
+    set_cart(client, {product.id: 2})
+    response = place_order(client)
+    order = db.session.scalar(db.select(Order))
+    assert response.status_code == 422
+    assert "決済ページを作れませんでした" in response.text
+    assert order.status == OrderStatus.CANCELLED
     assert order.stripe_checkout_session_id is None
+    assert get_cart(client) == {str(product.id): 2}  # カートは残る
+    assert available_stock(product) == 5  # 押さえた在庫は戻る
+
+
+def test_Stripeに渡す前の注文エラーではStripeを呼ばない(
+    client, login, customer, producer, fake_payment
+):
+    product = make_product(producer, stock=1)
+    login(customer)
+    set_cart(client, {product.id: 5})
+    place_order(client)
+    assert fake_payment.created == []
+
+
+def test_決済ページへ移ったらカートが空になる(client, login, customer, producer):
+    product = make_product(producer)
+    login(customer)
+    set_cart(client, {product.id: 1})
+    assert place_order(client).status_code == 303
+    assert get_cart(client) is None
 
 
 def test_注文の明細は注文時点の商品名と単価を持つ(client, login, customer, producer):

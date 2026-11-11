@@ -17,6 +17,10 @@ def create_app(config=None):
         UPLOAD_FOLDER=os.path.join(app.root_path, "static", "uploads"),
         # 写真は 5MB まで。フォームの他の項目の分を見込んで、リクエスト全体は 6MB まで
         MAX_CONTENT_LENGTH=6 * 1024 * 1024,
+        STRIPE_SECRET_KEY=os.environ.get("STRIPE_SECRET_KEY", ""),
+        STRIPE_WEBHOOK_SECRET=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        # テストでは、本物の Stripe の代わりにフェイクを渡す（既定は None＝本物）
+        PAYMENT_SERVICE=None,
     )
     if config is not None:
         app.config.update(config)
@@ -32,6 +36,12 @@ def create_app(config=None):
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
     login_manager.login_message = "ログインしてください"
+
+    # 外部サービスは app.extensions に入れ、ビューはここから呼ぶ。
+    # 設定で渡されたフェイクがあればそれを、なければ本物のモジュールを使う
+    from marche.services import payment
+
+    app.extensions["payment"] = app.config["PAYMENT_SERVICE"] or payment
 
     from marche.views import auth, cart, orders, producer, shop
 
