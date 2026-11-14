@@ -1,0 +1,92 @@
+[1mdiff --git a/marche/views/orders.py b/marche/views/orders.py[m
+[1mindex bf6d528..0984d90 100644[m
+[1m--- a/marche/views/orders.py[m
+[1m+++ b/marche/views/orders.py[m
+[36m@@ -1,10 +1,21 @@[m
+[31m-from flask import Blueprint, abort, flash, redirect, render_template, url_for[m
+[32m+[m[32mfrom flask import ([m
+[32m+[m[32m    Blueprint,[m
+[32m+[m[32m    abort,[m
+[32m+[m[32m    current_app,[m
+[32m+[m[32m    flash,[m
+[32m+[m[32m    redirect,[m
+[32m+[m[32m    render_template,[m
+[32m+[m[32m    request,[m
+[32m+[m[32m    url_for,[m
+[32m+[m[32m)[m
+ from flask_login import current_user, login_required[m
+ [m
+ from marche.cart import clear_cart, get_cart[m
+ from marche.extensions import db[m
+[31m-from marche.models import Order[m
+[32m+[m[32mfrom marche.models import Order, OrderStatus[m
+[32m+[m[32mfrom marche.services import inventory[m
+ from marche.services.orders import OrderError, create_order[m
+[32m+[m[32mfrom marche.services.payment import PaymentError[m
+ from marche.views.cart import render_cart[m
+ [m
+ bp = Blueprint("orders", __name__, url_prefix="/orders")[m
+[36m@@ -31,9 +42,21 @@[m [mdef create():[m
+     except OrderError as error:[m
+         flash(str(error))[m
+         return render_cart(422)[m
+[32m+[m
+[32m+[m[32m    # 外部サービスは、current_app.extensions 経由で呼ぶ（テストではフェイクに差し替わる）[m
+[32m+[m[32m    payment = current_app.extensions["payment"][m
+[32m+[m[32m    try:[m
+[32m+[m[32m        session_id, url = payment.create_checkout_session(order)[m
+[32m+[m[32m    except PaymentError as error:[m
+[32m+[m[32m        # 決済ページを作れなかった注文は、取り消してカートに戻す（カートは残したまま）[m
+[32m+[m[32m        inventory.cancel(order)[m
+[32m+[m[32m        flash(str(error))[m
+[32m+[m[32m        return render_cart(422)[m
+[32m+[m
+[32m+[m[32m    order.stripe_checkout_session_id = session_id[m
+[32m+[m[32m    db.session.commit()[m
+     clear_cart()[m
+[31m-    flash("ご注文を受け付けました")[m
+[31m-    return redirect(url_for("orders.detail", order_id=order.id), 303)[m
+[32m+[m[32m    return redirect(url, 303)[m
+ [m
+ [m
+ @bp.route("/<int:order_id>")[m
+[36m@@ -41,3 +64,39 @@[m [mdef create():[m
+ def detail(order_id):[m
+     order = get_own_order_or_403(order_id)[m
+     return render_template("orders/detail.html", order=order)[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@bp.route("/<int:order_id>/complete")[m
+[32m+[m[32m@login_required[m
+[32m+[m[32mdef complete(order_id):[m
+[32m+[m[32m    # 仮の画面。支払いの確認（Stripe への問い合わせ）は、あとの章で作る[m
+[32m+[m[32m    order = get_own_order_or_403(order_id)[m
+[32m+[m[32m    return render_template("orders/complete.html", order=order)[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@bp.route("/<int:order_id>/cancel", methods=["GET", "POST"])[m
+[32m+[m[32m@login_required[m
+[32m+[m[32mdef cancel(order_id):[m
+[32m+[m[32m    order = get_own_order_or_403(order_id)[m
+[32m+[m[32m    if request.method == "GET":[m
+[32m+[m[32m        return render_template("orders/cancel.html", order=order)[m
+[32m+[m
+[32m+[m[32m    if order.status != OrderStatus.PENDING:[m
+[32m+[m[32m        flash("この注文は取り消せません")[m
+[32m+[m[32m        return redirect(url_for("orders.detail", order_id=order.id))[m
+[32m+[m
+[32m+[m[32m    # 先に決済ページを期限切れにする。できなかったら、取り消さずに注文詳細へ[m
+[32m+[m[32m    # （期限切れにできない＝すでに支払いが済んでいるかもしれないため）[m
+[32m+[m[32m    if order.stripe_checkout_session_id:[m
+[32m+[m[32m        payment = current_app.extensions["payment"][m
+[32m+[m[32m        try:[m
+[32m+[m[32m            payment.expire_session(order.stripe_checkout_session_id)[m
+[32m+[m[32m        except PaymentError as error:[m
+[32m+[m[32m            flash(f"{error}（注文は取り消していません）")[m
+[32m+[m[32m            return redirect(url_for("orders.detail", order_id=order.id))[m
+[32m+[m
+[32m+[m[32m    if inventory.cancel(order):[m
+[32m+[m[32m        flash("注文を取り消しました")[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        flash("この注文は取り消せません")[m
+[32m+[m[32m    return redirect(url_for("orders.detail", order_id=order.id))[m
